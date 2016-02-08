@@ -146,13 +146,21 @@ public class ScriptOpCodes {
     /** Check lock time of the block. Introduced in BIP 65, replacing OP_NOP2 */
     public static final int OP_CHECKLOCKTIMEVERIFY = 0xb1;
 
+    // lotterycoin additions
+    /** BEACON: random hash based on previous blocks, replacing OP_NOP3 */
+    public static final int OP_BEACON = 0xb2;
+    /** FLEXIHASH: hash lottery guess */
+    public static final int OP_FLEXIHASH = 0xb3;
+
     // expansion
     public static final int OP_NOP1 = 0xb0;
     /** Deprecated by BIP 65 */
     @Deprecated
     public static final int OP_NOP2 = OP_CHECKLOCKTIMEVERIFY;
-    public static final int OP_NOP3 = 0xb2;
-    public static final int OP_NOP4 = 0xb3;
+    @Deprecated
+    public static final int OP_NOP3 = OP_BEACON;
+    @Deprecated
+    public static final int OP_NOP4 = OP_FLEXIHASH;
     public static final int OP_NOP5 = 0xb4;
     public static final int OP_NOP6 = 0xb5;
     public static final int OP_NOP7 = 0xb6;
@@ -265,8 +273,8 @@ public class ScriptOpCodes {
         .put(OP_CHECKMULTISIGVERIFY, "CHECKMULTISIGVERIFY")
         .put(OP_NOP1, "NOP1")
         .put(OP_CHECKLOCKTIMEVERIFY, "CHECKLOCKTIMEVERIFY")
-        .put(OP_NOP3, "NOP3")
-        .put(OP_NOP4, "NOP4")
+        .put(OP_BEACON, "BEACON")
+        .put(OP_FLEXIHASH, "FLEXIHASH")
         .put(OP_NOP5, "NOP5")
         .put(OP_NOP6, "NOP6")
         .put(OP_NOP7, "NOP7")
@@ -379,7 +387,9 @@ public class ScriptOpCodes {
         .put("NOP1", OP_NOP1)
         .put("CHECKLOCKTIMEVERIFY", OP_CHECKLOCKTIMEVERIFY)
         .put("NOP2", OP_NOP2)
+        .put("BEACON", OP_BEACON)
         .put("NOP3", OP_NOP3)
+        .put("FLEXIHASH", OP_FLEXIHASH)
         .put("NOP4", OP_NOP4)
         .put("NOP5", OP_NOP5)
         .put("NOP6", OP_NOP6)

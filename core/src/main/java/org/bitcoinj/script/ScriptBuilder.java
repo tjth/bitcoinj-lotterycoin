@@ -214,6 +214,25 @@ public class ScriptBuilder {
         return new Script(chunks);
     }
 
+    //TODO: create a function to easily create lottery guess script
+    /** Creates a scriptPubKey that encodes a lottery entry */
+    public static Script createLotteryEntryScript(
+        int beaconBits, 
+        int startBlock, 
+        int endBlock
+        ) {
+      return null; 
+    }
+
+    //TODO: create a function to easily create lottery claim script
+    /** Creates a scriptPubKey that encodes a lottery claim/guess */
+    public static Script createLotteryEntryScript(
+        int beaconBits,
+        int guess 
+        ) {
+      return null;  
+    }
+     
     /** Creates a scriptPubKey that encodes payment to the given address. */
     public static Script createOutputScript(Address to) {
         if (to.isP2SHAddress()) {
