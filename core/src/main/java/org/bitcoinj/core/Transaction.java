@@ -145,6 +145,9 @@ public class Transaction extends ChildMessage {
      * more appropriately.
      */
     public enum Purpose {
+        /** Used for lotteries **/
+        LOTTERY_ENTRY,
+        LOTTERY_GUESS,
         /** Used when the purpose of a transaction is genuinely unknown. */
         UNKNOWN,
         /** Transaction created to satisfy a user payment request. */
@@ -186,6 +189,19 @@ public class Transaction extends ChildMessage {
         outputs = new ArrayList<TransactionOutput>();
         // We don't initialize appearsIn deliberately as it's only useful for transactions stored in the wallet.
         length = 8; // 8 for std fields
+    }
+
+
+    public static Transaction lotteryEntryTransaction(NetworkParameters params) {
+      Transaction tx = new Transaction(params);
+      tx.setPurpose(Purpose.LOTTERY_ENTRY);
+      return tx;
+    }
+
+    public static Transaction lotteryGuessTransaction(NetworkParameters params) {
+      Transaction tx = new Transaction(params);
+      tx.setPurpose(Purpose.LOTTERY_GUESS);
+      return tx;
     }
 
     /**

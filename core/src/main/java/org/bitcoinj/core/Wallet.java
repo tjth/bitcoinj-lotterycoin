@@ -4138,22 +4138,25 @@ public class Wallet extends BaseTaggableObject
                 log.info("  emptying {}", bestCoinSelection.valueGathered.toFriendlyString());
             }
 
-            for (TransactionOutput output : bestCoinSelection.gathered)
-                req.tx.addInput(output);
+            // Don't add extra inputs if this is a lottery guess transaction
+            Transaction.Purpose purpose = req.tx.getPurpose();
+            if (purpose != Transaction.Purpose.LOTTERY_GUESS) {
+              for (TransactionOutput output : bestCoinSelection.gathered)
+                  req.tx.addInput(output);
 
-            if (req.ensureMinRequiredFee && req.emptyWallet) {
-                final Coin baseFee = req.fee == null ? Coin.ZERO : req.fee;
-                final Coin feePerKb = req.feePerKb == null ? Coin.ZERO : req.feePerKb;
-                Transaction tx = req.tx;
-                if (!adjustOutputDownwardsForFee(tx, bestCoinSelection, baseFee, feePerKb))
-                    throw new CouldNotAdjustDownwards();
-            }
+              if (req.ensureMinRequiredFee && req.emptyWallet) {
+                  final Coin baseFee = req.fee == null ? Coin.ZERO : req.fee;
+                  final Coin feePerKb = req.feePerKb == null ? Coin.ZERO : req.feePerKb;
+                  Transaction tx = req.tx;
+                  if (!adjustOutputDownwardsForFee(tx, bestCoinSelection, baseFee, feePerKb))
+                      throw new CouldNotAdjustDownwards();
+              }
 
             if (bestChangeOutput != null) {
                 req.tx.addOutput(bestChangeOutput);
                 log.info("  with {} change", bestChangeOutput.getValue().toFriendlyString());
             }
-
+            }
             // Now shuffle the outputs to obfuscate which is the change.
             if (req.shuffleOutputs)
                 req.tx.shuffleOutputs();
