@@ -41,6 +41,19 @@ public class RegTestParams extends TestNet2Params {
         majorityWindow = MainNetParams.MAINNET_MAJORITY_WINDOW;
     }
 
+    public RegTestParams(int customPort) {
+        super();
+        interval = 10000;
+        maxTarget = MAX_TARGET;
+        subsidyDecreaseBlockCount = 150;
+        port = customPort;
+        id = ID_REGTEST;
+
+        majorityEnforceBlockUpgrade = MainNetParams.MAINNET_MAJORITY_ENFORCE_BLOCK_UPGRADE;
+        majorityRejectBlockOutdated = MainNetParams.MAINNET_MAJORITY_REJECT_BLOCK_OUTDATED;
+        majorityWindow = MainNetParams.MAINNET_MAJORITY_WINDOW;
+    }
+
     @Override
     public boolean allowEmptyPeerChain() {
         return true;
@@ -66,6 +79,13 @@ public class RegTestParams extends TestNet2Params {
     public static synchronized RegTestParams get() {
         if (instance == null) {
             instance = new RegTestParams();
+        }
+        return instance;
+    }
+
+    public static synchronized RegTestParams get(int customPort) {
+        if (instance == null) {
+            instance = new RegTestParams(customPort);
         }
         return instance;
     }
