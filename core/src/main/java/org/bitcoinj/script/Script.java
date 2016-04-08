@@ -246,6 +246,19 @@ public class Script {
                chunks.get(4).equalsOpCode(OP_CHECKSIG);
     }
 
+
+    /**
+     * Returns true if this script is a lottery entry
+     */
+    public boolean isLotteryEntry() {
+      //TODO: make this more efficient based on final format
+      byte[] program = getProgram();
+      for(int i = 0; i < program.length; i++) {
+        if ((program[i] & 0xff) == OP_BEACON) return true; 
+      }
+      return false;
+    }
+
     /**
      * An alias for isPayToScriptHash.
      */
