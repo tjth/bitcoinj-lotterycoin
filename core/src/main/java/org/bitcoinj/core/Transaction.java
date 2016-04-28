@@ -316,7 +316,7 @@ public class Transaction extends ChildMessage {
         // This is tested in WalletTest.
         Coin v = Coin.ZERO;
         for (TransactionOutput o : outputs) {
-            if (!o.isMineOrWatched(transactionBag)) continue;
+            if (!o.isMineOrWatched(transactionBag) || o.getScriptPubKey().isLotteryEntry()) continue;
             v = v.add(o.getValue());
         }
         return v;
@@ -399,7 +399,7 @@ public class Transaction extends ChildMessage {
                 continue;
             // The connected output may be the change to the sender of a previous input sent to this wallet. In this
             // case we ignore it.
-            if (!connected.isMineOrWatched(wallet))
+            if (!connected.isMineOrWatched(wallet) || input.getScriptSig().isLotteryClaim())
                 continue;
             v = v.add(connected.getValue());
         }
@@ -1312,6 +1312,21 @@ public class Transaction extends ChildMessage {
     public boolean isFinal(int height, long blockTimeSeconds) {
         long time = getLockTime();
         return time < (time < LOCKTIME_THRESHOLD ? height : blockTimeSeconds) || !isTimeLocked();
+    }
+
+
+    public boolean containsLotteryEntryTransaction() {
+      for (TransactionOutput out : outputs) {
+        if (out.getScriptPubKey().isLotteryEntry()) return true;
+      }
+      return false;
+    }
+
+    public boolean containsLotteryClaimTransaction() {
+      for (TransactionInput in : inputs) {
+        if (in.getScriptSig().isLotteryClaim()) return true;
+      }
+      return false;
     }
 
     /**

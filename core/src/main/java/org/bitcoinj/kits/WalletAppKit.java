@@ -75,6 +75,7 @@ public class WalletAppKit extends AbstractIdleService {
     protected volatile File vWalletFile;
 
     protected boolean useAutoSave = true;
+    protected boolean useLottery = false;
     protected PeerAddress[] peerAddresses;
     protected PeerDataEventListener downloadListener;
     protected boolean autoStop = true;
@@ -87,6 +88,14 @@ public class WalletAppKit extends AbstractIdleService {
     @Nullable protected PeerDiscovery discovery;
 
     protected volatile Context context;
+
+    /**
+     * Creates a new WalletAppKit, with a newly created {@link Context}. Files will be stored in the given directory.
+     */
+    public WalletAppKit(NetworkParameters params, File directory, String filePrefix, boolean useLottery) {
+        this(new Context(params), directory, filePrefix);
+        this.useLottery = useLottery;
+    }
 
     /**
      * Creates a new WalletAppKit, with a newly created {@link Context}. Files will be stored in the given directory.
@@ -272,7 +281,7 @@ public class WalletAppKit extends AbstractIdleService {
             boolean chainFileExists = chainFile.exists();
             vWalletFile = new File(directory, filePrefix + ".wallet");
             boolean shouldReplayWallet = (vWalletFile.exists() && !chainFileExists) || restoreFromSeed != null;
-            vWallet = createOrLoadWallet(shouldReplayWallet);
+            vWallet = createOrLoadWallet(shouldReplayWallet, useLottery);
 
             // Initiate Bitcoin network objects (block store, blockchain and peer group)
             vStore = provideBlockStore(chainFile);
@@ -358,14 +367,19 @@ public class WalletAppKit extends AbstractIdleService {
     }
 
     private Wallet createOrLoadWallet(boolean shouldReplayWallet) throws Exception {
+      return createOrLoadWallet(shouldReplayWallet, false);
+    }
+
+    private Wallet createOrLoadWallet(boolean shouldReplayWallet, boolean useLottery) throws Exception {
         Wallet wallet;
 
         maybeMoveOldWalletOutOfTheWay();
 
         if (vWalletFile.exists()) {
-            wallet = loadWallet(shouldReplayWallet);
+            log.info("Wallet file already exists.");
+            wallet = loadWallet(shouldReplayWallet, useLottery);
         } else {
-            wallet = createWallet();
+            wallet = createWallet(useLottery);
             wallet.freshReceiveKey();
             for (WalletExtension e : provideWalletExtensions()) {
                 wallet.addExtension(e);
@@ -375,7 +389,7 @@ public class WalletAppKit extends AbstractIdleService {
             // deserializing the extension (see WalletExtension#deserializeWalletExtension(Wallet, byte[]))
             // Hence, we first save and then load wallet to ensure any extensions are correctly initialized.
             wallet.saveToFile(vWalletFile);
-            wallet = loadWallet(false);
+            wallet = loadWallet(false, useLottery);
         }
 
         if (useAutoSave) wallet.autosaveToFile(vWalletFile, 5, TimeUnit.SECONDS, null);
@@ -384,9 +398,23 @@ public class WalletAppKit extends AbstractIdleService {
     }
 
     private Wallet loadWallet(boolean shouldReplayWallet) throws Exception {
-        Wallet wallet;
+        return loadWallet(shouldReplayWallet, false);
+    }
+
+    private Wallet loadWallet(boolean shouldReplayWallet, boolean useLottery) throws Exception {
+        if (useLottery) {
+          LotteryWallet lWallet = loadWalletFromStream(shouldReplayWallet);
+          return lWallet;
+        }
+
+        Wallet wallet = loadWalletFromStream(shouldReplayWallet);
+        return wallet;
+    }
+
+    private Wallet 
         FileInputStream walletStream = new FileInputStream(vWalletFile);
         try {
+          //TODO: change this bit so a LotteryWallet is created
             List<WalletExtension> extensions = provideWalletExtensions();
             WalletExtension[] extArray = extensions.toArray(new WalletExtension[extensions.size()]);
             Protos.Wallet proto = WalletProtobufSerializer.parseToProto(walletStream);
@@ -404,7 +432,7 @@ public class WalletAppKit extends AbstractIdleService {
         return wallet;
     }
 
-    protected Wallet createWallet() {
+    protected Wallet createWallet(boolean useLottery) {
         KeyChainGroup kcg;
         if (restoreFromSeed != null)
             kcg = new KeyChainGroup(params, restoreFromSeed);
@@ -413,6 +441,7 @@ public class WalletAppKit extends AbstractIdleService {
         if (walletFactory != null) {
             return walletFactory.create(params, kcg);
         } else {
+            if (useLottery) return new LotteryWallet(params, kcg);
             return new Wallet(params, kcg);  // default
         }
     }

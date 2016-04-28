@@ -88,7 +88,7 @@ import static com.google.common.base.Preconditions.*;
  */
 public class Wallet extends BaseTaggableObject
     implements NewBestBlockListener, TransactionReceivedInBlockListener, PeerFilterProvider, KeyBag, TransactionBag, ReorganizeListener {
-    private static final Logger log = LoggerFactory.getLogger(Wallet.class);
+    protected static final Logger log = LoggerFactory.getLogger(Wallet.class);
     private static final int MINIMUM_BLOOM_DATA_LENGTH = 8;
 
     // Ordering: lock > keyChainGroupLock. KeyChainGroup is protected separately to allow fast querying of current receive address
@@ -134,7 +134,7 @@ public class Wallet extends BaseTaggableObject
     // (so it would be wasteful to repeat). Thus we keep them around here for a while. If we drop our network
     // connections then the remote peers will forget that we were sent the tx data previously and send it again
     // when relaying a filtered merkleblock.
-    private final LinkedHashMap<Sha256Hash, Transaction> riskDropped = new LinkedHashMap<Sha256Hash, Transaction>() {
+    protected final LinkedHashMap<Sha256Hash, Transaction> riskDropped = new LinkedHashMap<Sha256Hash, Transaction>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<Sha256Hash, Transaction> eldest) {
             return size() > 1000;
@@ -177,7 +177,7 @@ public class Wallet extends BaseTaggableObject
     // it sent transactions to the wallet, without this we'd double count.
     private HashSet<Sha256Hash> ignoreNextNewBlock;
     // Whether or not to ignore nLockTime > 0 transactions that are received to the mempool.
-    private boolean acceptRiskyTransactions;
+    protected boolean acceptRiskyTransactions;
 
     // Stuff for notifying transaction objects that we changed their confidences. The purpose of this is to avoid
     // spuriously sending lots of repeated notifications to listeners that API users aren't really interested in as a
@@ -1739,7 +1739,7 @@ public class Wallet extends BaseTaggableObject
      * the double spent inputs are not ours.
      * @return The set of transactions that double spend "tx".
      */
-    private Set<Transaction> findDoubleSpendsAgainst(Transaction tx, Map<Sha256Hash, Transaction> candidates) {
+    protected Set<Transaction> findDoubleSpendsAgainst(Transaction tx, Map<Sha256Hash, Transaction> candidates) {
         checkState(lock.isHeldByCurrentThread());
         if (tx.isCoinBase()) return Sets.newHashSet();
         // Compile a set of outpoints that are spent by tx.

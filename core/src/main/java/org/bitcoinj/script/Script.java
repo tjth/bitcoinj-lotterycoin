@@ -260,6 +260,26 @@ public class Script {
     }
 
     /**
+     * Returns true if this script is a lottery claim
+     */
+    public boolean isLotteryClaim() {
+      //TODO: make this more efficient based on final format
+      byte[] program = getProgram();
+      if (program.length < 2) return false;
+      boolean containsEqual = (program[1] & 0xff) == OP_EQUAL;
+      boolean changeMe = ((program[0] & 0xff) == OP_1 ||
+                         (program[0] & 0xff) == OP_2 ||
+                         (program[0] & 0xff) == OP_3 ||
+                         (program[0] & 0xff) == OP_4 ||
+                         (program[0] & 0xff) == OP_5 ||
+                         (program[0] & 0xff) == OP_6 ||
+                         (program[0] & 0xff) == OP_7 ||
+                         (program[0] & 0xff) == OP_8 ||
+                         (program[0] & 0xff) == OP_9 ||
+                         (program[0] & 0xff) == OP_10);
+      return containsEqual && changeMe;
+    }
+    /**
      * An alias for isPayToScriptHash.
      */
     @Deprecated
