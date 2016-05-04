@@ -213,6 +213,9 @@ public class Wallet extends BaseTaggableObject
     // If this is set then the wallet selects spendable candidate outputs from a UTXO provider.
     @Nullable private volatile UTXOProvider vUTXOProvider;
 
+    // If true, this wallet holds lottery transactions in the UTXO pool
+    private boolean useLottery = false;
+
     /**
      * Creates a new, empty wallet with a randomly chosen seed and no transactions. Make sure to provide for sufficient
      * backup! Any keys will be derived from the seed. If you want to restore a wallet from disk instead, see
@@ -263,13 +266,22 @@ public class Wallet extends BaseTaggableObject
         return new Wallet(params, group);
     }
 
+    public Wallet(NetworkParameters params, KeyChainGroup keyChainGroup, boolean useLottery) {
+        this(Context.getOrCreate(params), keyChainGroup, useLottery);
+    }
+
     public Wallet(NetworkParameters params, KeyChainGroup keyChainGroup) {
-        this(Context.getOrCreate(params), keyChainGroup);
+        this(Context.getOrCreate(params), keyChainGroup, false);
     }
 
     // TODO: When this class moves to the Wallet package, along with the protobuf serializer, then hide this.
     /** For internal use only. */
     public Wallet(Context context, KeyChainGroup keyChainGroup) {
+        this(context, keyChainGroup, false);
+    }
+
+    public Wallet(Context context, KeyChainGroup keyChainGroup, boolean useLottery) {
+        this.useLottery = useLottery;
         this.context = context;
         this.params = context.getParams();
         this.keyChainGroup = checkNotNull(keyChainGroup);
@@ -348,6 +360,10 @@ public class Wallet extends BaseTaggableObject
         } finally {
             lock.unlock();
         }
+    }
+
+    public void setLottery(boolean useLottery) {
+        this.useLottery = useLottery;
     }
 
     public List<TransactionSigner> getTransactionSigners() {
@@ -1726,9 +1742,17 @@ public class Wallet extends BaseTaggableObject
     public boolean isTransactionRelevant(Transaction tx) throws ScriptException {
         lock.lock();
         try {
-            return tx.getValueSentFromMe(this).signum() > 0 ||
-                   tx.getValueSentToMe(this).signum() > 0 ||
-                   !findDoubleSpendsAgainst(tx, transactions).isEmpty();
+            boolean ret = false;
+            if (useLottery) {
+                ret = tx.containsLotteryEntryTransaction() ||
+                         tx.containsLotteryClaimTransaction();
+            }
+
+            ret = ret || tx.getValueSentFromMe(this).signum() > 0 ||
+                         tx.getValueSentToMe(this).signum() > 0 ||
+                         !findDoubleSpendsAgainst(tx, transactions).isEmpty();
+                         
+            return ret;
         } finally {
             lock.unlock();
         }
@@ -2115,7 +2139,14 @@ public class Wallet extends BaseTaggableObject
         // against our pending transactions. Note that a tx may double spend our pending transactions and also send
         // us money/spend our money.
         boolean hasOutputsToMe = tx.getValueSentToMe(this).signum() > 0;
-        if (hasOutputsToMe) {
+
+        if (useLottery && tx.containsLotteryEntryTransaction()) {
+            // We have received a lottery entry output in this transaction
+            // TODO: do we ever receive an entry that has been spend already?
+            //  yes, don't add in this situation! change this
+            log.info("  lottery entry tx {} -> unspent", tx.getHashAsString());
+            addWalletTransaction(Pool.UNSPENT, tx);
+        } else if (hasOutputsToMe) {
             // Needs to go into either unspent or spent (if the outputs were already spent by a pending tx).
             if (tx.isEveryOwnedOutputSpent(this)) {
                 log.info("  tx {} ->spent (by pending)", tx.getHashAsString());
@@ -4291,6 +4322,11 @@ public class Wallet extends BaseTaggableObject
             if (vUTXOProvider == null) {
                 candidates = new ArrayList<TransactionOutput>(myUnspents.size());
                 for (TransactionOutput output : myUnspents) {
+                    if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
+                        candidates.add(output);
+                        continue;
+                    }
+
                     if (excludeUnsignable && !canSignFor(output.getScriptPubKey())) continue;
                     Transaction transaction = checkNotNull(output.getParentTransaction());
                     if (excludeImmatureCoinbases && !transaction.isMature())

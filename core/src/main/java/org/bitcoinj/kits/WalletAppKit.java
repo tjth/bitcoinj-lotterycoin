@@ -402,19 +402,11 @@ public class WalletAppKit extends AbstractIdleService {
     }
 
     private Wallet loadWallet(boolean shouldReplayWallet, boolean useLottery) throws Exception {
-        if (useLottery) {
-          LotteryWallet lWallet = loadWalletFromStream(shouldReplayWallet);
-          return lWallet;
-        }
-
-        Wallet wallet = loadWalletFromStream(shouldReplayWallet);
-        return wallet;
-    }
-
-    private Wallet 
+        Wallet wallet;
+         
         FileInputStream walletStream = new FileInputStream(vWalletFile);
         try {
-          //TODO: change this bit so a LotteryWallet is created
+          //TODO: change this bit so a Wallet with useLottery = true is created
             List<WalletExtension> extensions = provideWalletExtensions();
             WalletExtension[] extArray = extensions.toArray(new WalletExtension[extensions.size()]);
             Protos.Wallet proto = WalletProtobufSerializer.parseToProto(walletStream);
@@ -429,6 +421,7 @@ public class WalletAppKit extends AbstractIdleService {
         } finally {
             walletStream.close();
         }
+        wallet.setLottery(useLottery);
         return wallet;
     }
 
@@ -441,8 +434,7 @@ public class WalletAppKit extends AbstractIdleService {
         if (walletFactory != null) {
             return walletFactory.create(params, kcg);
         } else {
-            if (useLottery) return new LotteryWallet(params, kcg);
-            return new Wallet(params, kcg);  // default
+            return new Wallet(params, kcg, useLottery);  // default
         }
     }
 
