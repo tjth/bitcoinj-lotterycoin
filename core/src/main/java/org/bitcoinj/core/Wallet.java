@@ -3422,7 +3422,12 @@ public class Wallet extends BaseTaggableObject
         /** Same as ESTIMATED but only for outputs we have the private keys for and can sign ourselves. */
         ESTIMATED_SPENDABLE,
         /** Same as AVAILABLE but only for outputs we have the private keys for and can sign ourselves. */
-        AVAILABLE_SPENDABLE
+        AVAILABLE_SPENDABLE,
+
+        /** Lottery wallets keep track of entries from others, but they're not part of our balance.
+         *  Use getClaimableBalance() to find out how much we could win from the lottery.
+         */
+        LOTTERYAVAILABLE
     }
 
     /** @deprecated Use {@link #getBalance()} instead as including watched balances is now the default behaviour */
@@ -3460,6 +3465,14 @@ public class Wallet extends BaseTaggableObject
                 Coin value = Coin.ZERO;
                 for (TransactionOutput out : all) value = value.add(out.getValue());
                 return value;
+            } else if (balanceType == BalanceType.LOTTERYAVAILABLE) {
+                List<TransactionOutput> candidates = calculateAllSpendCandidates();
+
+                Coin value = Coin.ZERO;
+                for(TransactionOutput out : candidates) {
+                    if (!out.getScriptPubKey().isLotteryEntry()) value = value.add(out.getValue());  
+                }
+                return value;
             } else {
                 throw new AssertionError("Unknown balance type");  // Unreachable.
             }
@@ -3484,6 +3497,25 @@ public class Wallet extends BaseTaggableObject
             lock.unlock();
         }
     }
+
+    /**
+     * Returns the balance that is claimable via lottery entries we have seen
+     */
+    public Coin getClaimableBalance() {
+        if (!useLottery) {
+          log.info("Called getClaimableBalance() but not using lottery wallet!");
+          return Coin.ZERO;
+        }
+
+        List<TransactionOutput> candidates = calculateAllSpendCandidates();
+
+        Coin value = Coin.ZERO;
+        for(TransactionOutput out : candidates) {
+            if (out.getScriptPubKey().isLotteryEntry()) value = value.add(out.getValue());  
+        }
+        return value;
+    }
+
 
     private static class BalanceFutureRequest {
         public SettableFuture<Coin> future;
