@@ -3507,7 +3507,7 @@ public class Wallet extends BaseTaggableObject
           return Coin.ZERO;
         }
 
-        List<TransactionOutput> candidates = calculateAllSpendCandidates();
+        List<TransactionOutput> candidates = calculateAllClaimCandidates();
 
         Coin value = Coin.ZERO;
         for(TransactionOutput out : candidates) {
@@ -4354,11 +4354,6 @@ public class Wallet extends BaseTaggableObject
             if (vUTXOProvider == null) {
                 candidates = new ArrayList<TransactionOutput>(myUnspents.size());
                 for (TransactionOutput output : myUnspents) {
-                    if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
-                        candidates.add(output);
-                        continue;
-                    }
-
                     if (excludeUnsignable && !canSignFor(output.getScriptPubKey())) continue;
                     Transaction transaction = checkNotNull(output.getParentTransaction());
                     if (excludeImmatureCoinbases && !transaction.isMature())
@@ -4367,6 +4362,27 @@ public class Wallet extends BaseTaggableObject
                 }
             } else {
                 candidates = calculateAllSpendCandidatesFromUTXOProvider(excludeImmatureCoinbases);
+            }
+            return candidates;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Returns a list of all claimable lottery entries that we have seen 
+     *
+     */
+    public List<TransactionOutput> calculateAllClaimCandidates() {
+        lock.lock();
+        try {
+            List<TransactionOutput> candidates;
+            candidates = new ArrayList<TransactionOutput>(myUnspents.size());
+            for (TransactionOutput output : myUnspents) {
+                if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
+                    candidates.add(output);
+                    continue;
+                }
             }
             return candidates;
         } finally {
