@@ -1900,7 +1900,12 @@ public class Wallet extends BaseTaggableObject
                     final TransactionInput spentBy = output.getSpentBy();
                     if (spentBy != null) {
                         if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
-                            checkState(myClaimables.add(output));
+                            if (myClaimables.contains(output)) {
+                                log.info("    lottery entry already in claimables, not adding.");
+                            } else {
+                                log.info("    adding transaction to claimable pool.");
+                                checkState(myClaimables.add(output));
+                            }
                         } else {
                             checkState(myUnspents.add(output));
                         }
@@ -2232,7 +2237,11 @@ public class Wallet extends BaseTaggableObject
                     //     Now it's being confirmed of course, we cannot mark it as spent again.
                     // (2) A double spend from chain: this will be handled later by findDoubleSpendsAgainst()/killTxns().
                     //
-                    // In any case, nothing to do here.
+                    if (input.getScriptSig().isLotteryClaim() && myClaimables.contains(output)) {
+                        checkState(output.getScriptPubKey().isLotteryEntry());
+                        log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
+                        checkState(myClaimables.remove(output));
+                    } 
                 } else {
                     // We saw two pending transactions that double spend each other. We don't know which will win.
                     // This can happen in the case of bad network nodes that mutate transactions. Do a hex dump
@@ -2258,6 +2267,10 @@ public class Wallet extends BaseTaggableObject
                     checkState(myClaimables.contains(output));
                     log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
                     checkState(myClaimables.remove(output));
+                } else if (input.getScriptSig().isLotteryClaim()) {
+                    // We have received a lottery claim not in a block, don't remove anything from claimables
+                    //   as we may want to claim it too
+                    log.info("Transaction {} is a claim of {} output {} but is not in a block.", tx.getHashAsString(), connected.getHashAsString(), output.getIndex());
                 } else if (output.isMineOrWatched(this)) {
                     // Just because it's connected doesn't mean it's actually ours: sometimes we have total visibility.
                     checkState(myUnspents.remove(output));
@@ -2284,9 +2297,13 @@ public class Wallet extends BaseTaggableObject
                     // The unspents map might not have it if we never saw this tx until it was included in the chain
                     // and thus becomes spent the moment we become aware of it.
                     TransactionOutput out = input.getConnectedOutput();
-                    if (out.getScriptPubKey().isLotteryEntry()) {
+                    if (out.getScriptPubKey().isLotteryEntry() && fromChain) {
                         myClaimables.remove(out);
                         log.info("Removed from CLAIMABLES: {}", out);
+                    } else if (out.getScriptPubKey().isLotteryEntry()) {
+                        // We have received a lottery claim not in a block, don't remove anything from claimables
+                        //   as we may want to claim it too
+                        log.info("Transaction {} is a claim of {} output {} but is not in a block.", tx.getHashAsString(), out.getParentTransactionHash(), out.getIndex());
                     } else {
                         myUnspents.remove(out);
                         log.info("Removed from UNSPENTS: {}", out);

@@ -254,8 +254,8 @@ public class Script {
       //TODO: make this more efficient based on final format
       byte[] program = getProgram();
       if (program.length != 2) return false;
-      boolean hasEqual = (program[0] & 0xff) == OP_EQUAL;
-      boolean hasBeacon = (program[1] & 0xff) == OP_BEACON;
+      boolean hasBeacon = (program[0] & 0xff) == OP_BEACON;
+      boolean hasEqual = (program[1] & 0xff) == OP_EQUAL;
       return hasEqual && hasBeacon;
     }
 
