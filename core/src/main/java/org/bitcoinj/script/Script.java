@@ -253,10 +253,10 @@ public class Script {
     public boolean isLotteryEntry() {
       //TODO: make this more efficient based on final format
       byte[] program = getProgram();
-      for(int i = 0; i < program.length; i++) {
-        if ((program[i] & 0xff) == OP_BEACON) return true; 
-      }
-      return false;
+      if (program.length != 2) return false;
+      boolean hasEqual = (program[0] & 0xff) == OP_EQUAL;
+      boolean hasBeacon = (program[1] & 0xff) == OP_BEACON;
+      return hasEqual && hasBeacon;
     }
 
     /**
@@ -265,8 +265,7 @@ public class Script {
     public boolean isLotteryClaim() {
       //TODO: make this more efficient based on final format
       byte[] program = getProgram();
-      if (program.length < 2) return false;
-      boolean containsEqual = (program[1] & 0xff) == OP_EQUAL;
+      if (program.length != 1) return false;
       boolean changeMe = ((program[0] & 0xff) == OP_1 ||
                          (program[0] & 0xff) == OP_2 ||
                          (program[0] & 0xff) == OP_3 ||
@@ -277,7 +276,7 @@ public class Script {
                          (program[0] & 0xff) == OP_8 ||
                          (program[0] & 0xff) == OP_9 ||
                          (program[0] & 0xff) == OP_10);
-      return containsEqual && changeMe;
+      return changeMe;
     }
     /**
      * An alias for isPayToScriptHash.

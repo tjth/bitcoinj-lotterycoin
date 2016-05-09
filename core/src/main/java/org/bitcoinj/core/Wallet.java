@@ -127,6 +127,9 @@ public class Wallet extends BaseTaggableObject
     // Used to speed up various calculations.
     protected final HashSet<TransactionOutput> myUnspents = Sets.newHashSet();
 
+    // All the TransactionOutput objects that are lottery entries that we can spend
+    protected final HashSet<TransactionOutput> myClaimables = Sets.newHashSet();
+
     // Transactions that were dropped by the risk analysis system. These are not in any pools and not serialized
     // to disk. We have to keep them around because if we ignore a tx because we think it will never confirm, but
     // then it actually does confirm and does so within the same network session, remote peers will not resend us
@@ -1744,8 +1747,8 @@ public class Wallet extends BaseTaggableObject
         try {
             boolean ret = false;
             if (useLottery) {
-                ret = tx.containsLotteryEntryTransaction() ||
-                         tx.containsLotteryClaimTransaction();
+                ret = tx.containsLotteryEntry() ||
+                         tx.containsLotteryClaim();
             }
 
             ret = ret || tx.getValueSentFromMe(this).signum() > 0 ||
@@ -1864,6 +1867,9 @@ public class Wallet extends BaseTaggableObject
         log.info("Received tx{} for {}: {} [{}] in block {}", sideChain ? " on a side chain" : "",
                 valueDifference.toFriendlyString(), tx.getHashAsString(), relativityOffset,
                 block != null ? block.getHeader().getHash() : "(unit test)");
+        if (tx.containsLotteryEntry()) log.info("    this transaction contains a lottery entry.");
+        if (tx.containsLotteryClaim()) log.info("    this transaction contains a lottery claim.");
+        
 
         // Inform the key chains that the issued keys were observed in a transaction, so they know to
         // calculate more keys for the next Bloom filters.
@@ -1893,7 +1899,11 @@ public class Wallet extends BaseTaggableObject
                 for (TransactionOutput output : tx.getOutputs()) {
                     final TransactionInput spentBy = output.getSpentBy();
                     if (spentBy != null) {
-                        checkState(myUnspents.add(output));
+                        if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
+                            checkState(myClaimables.add(output));
+                        } else {
+                            checkState(myUnspents.add(output));
+                        }
                         spentBy.disconnect();
                     }
                 }
@@ -2140,10 +2150,11 @@ public class Wallet extends BaseTaggableObject
         // us money/spend our money.
         boolean hasOutputsToMe = tx.getValueSentToMe(this).signum() > 0;
 
-        if (useLottery && tx.containsLotteryEntryTransaction()) {
+        if (useLottery && tx.containsLotteryEntry()) {
             // We have received a lottery entry output in this transaction
             // TODO: do we ever receive an entry that has been spend already?
             //  yes, don't add in this situation! change this
+            //  how do we determine that it has been spent?
             log.info("  lottery entry tx {} -> unspent", tx.getHashAsString());
             addWalletTransaction(Pool.UNSPENT, tx);
         } else if (hasOutputsToMe) {
@@ -2159,6 +2170,9 @@ public class Wallet extends BaseTaggableObject
             // Didn't send us any money, but did spend some. Keep it around for record keeping purposes.
             log.info("  tx {} ->spent", tx.getHashAsString());
             addWalletTransaction(Pool.SPENT, tx);
+        } else if (useLottery && tx.containsLotteryClaim()) {
+            //TODO: add this to correct pool, spent or unspent
+            log.info("  tx {} is a lottery claim", tx.getHashAsString());
         } else if (forceAddToPool) {
             // Was manually added to pending, so we should keep it to notify the user of confidence information
             log.info("  tx {} ->spent (manually added)", tx.getHashAsString());
@@ -2236,8 +2250,16 @@ public class Wallet extends BaseTaggableObject
                 Transaction connected = checkNotNull(input.getConnectedTransaction());
                 log.info("  marked {} as spent", input.getOutpoint());
                 maybeMovePool(connected, "prevtx");
-                // Just because it's connected doesn't mean it's actually ours: sometimes we have total visibility.
-                if (output.isMineOrWatched(this)) {
+
+                // If input is a lottery claim, then we don't want to remove the spend transaction from
+                // the pending pool unless the output has been put in a block.
+                if (input.getScriptSig().isLotteryClaim() && fromChain) {
+                    checkState(output.getScriptPubKey().isLotteryEntry());
+                    checkState(myClaimables.contains(output));
+                    log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
+                    checkState(myClaimables.remove(output));
+                } else if (output.isMineOrWatched(this)) {
+                    // Just because it's connected doesn't mean it's actually ours: sometimes we have total visibility.
                     checkState(myUnspents.remove(output));
                 }
             }
@@ -2261,8 +2283,14 @@ public class Wallet extends BaseTaggableObject
                             pendingTx.getHashAsString(), pendingTx.getInputs().indexOf(input));
                     // The unspents map might not have it if we never saw this tx until it was included in the chain
                     // and thus becomes spent the moment we become aware of it.
-                    if (myUnspents.remove(input.getConnectedOutput()))
-                        log.info("Removed from UNSPENTS: {}", input.getConnectedOutput());
+                    TransactionOutput out = input.getConnectedOutput();
+                    if (out.getScriptPubKey().isLotteryEntry()) {
+                        myClaimables.remove(out);
+                        log.info("Removed from CLAIMABLES: {}", out);
+                    } else {
+                        myUnspents.remove(out);
+                        log.info("Removed from UNSPENTS: {}", out);
+                    }
                 }
             }
         }
@@ -2846,7 +2874,11 @@ public class Wallet extends BaseTaggableObject
         if (pool == Pool.UNSPENT || pool == Pool.PENDING) {
             for (TransactionOutput output : tx.getOutputs()) {
                 if (output.isAvailableForSpending() && output.isMineOrWatched(this))
-                    myUnspents.add(output);
+                    if (output.getScriptPubKey().isLotteryEntry() && useLottery) {
+                      myClaimables.add(output);
+                    } else {
+                      myUnspents.add(output);
+                    }
             }
         }
         // This is safe even if the listener has been added before, as TransactionConfidence ignores duplicate
@@ -3503,15 +3535,15 @@ public class Wallet extends BaseTaggableObject
      */
     public Coin getClaimableBalance() {
         if (!useLottery) {
-          log.info("Called getClaimableBalance() but not using lottery wallet!");
-          return Coin.ZERO;
+            log.info("Called getClaimableBalance() but not using lottery wallet!");
+            return Coin.ZERO;
         }
 
         List<TransactionOutput> candidates = calculateAllClaimCandidates();
 
         Coin value = Coin.ZERO;
         for(TransactionOutput out : candidates) {
-            if (out.getScriptPubKey().isLotteryEntry()) value = value.add(out.getValue());  
+            value = value.add(out.getValue());  
         }
         return value;
     }
@@ -4374,15 +4406,17 @@ public class Wallet extends BaseTaggableObject
      *
      */
     public List<TransactionOutput> calculateAllClaimCandidates() {
+        if (!useLottery) {
+            log.info("Tried to get claim candidates in a non-lottery wallet.");
+            return null;
+        }
+        
         lock.lock();
         try {
             List<TransactionOutput> candidates;
-            candidates = new ArrayList<TransactionOutput>(myUnspents.size());
-            for (TransactionOutput output : myUnspents) {
-                if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
+            candidates = new ArrayList<TransactionOutput>(myClaimables.size());
+            for (TransactionOutput output : myClaimables) {
                     candidates.add(output);
-                    continue;
-                }
             }
             return candidates;
         } finally {

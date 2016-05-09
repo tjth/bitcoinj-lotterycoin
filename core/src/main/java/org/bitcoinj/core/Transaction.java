@@ -1315,14 +1315,14 @@ public class Transaction extends ChildMessage {
     }
 
 
-    public boolean containsLotteryEntryTransaction() {
+    public boolean containsLotteryEntry() {
       for (TransactionOutput out : outputs) {
         if (out.getScriptPubKey().isLotteryEntry()) return true;
       }
       return false;
     }
 
-    public boolean containsLotteryClaimTransaction() {
+    public boolean containsLotteryClaim() {
       for (TransactionInput in : inputs) {
         if (in.getScriptSig().isLotteryClaim()) return true;
       }
