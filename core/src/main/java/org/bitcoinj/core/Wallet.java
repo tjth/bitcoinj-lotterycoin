@@ -2157,11 +2157,13 @@ public class Wallet extends BaseTaggableObject
 
         if (useLottery && tx.containsLotteryEntry()) {
             // We have received a lottery entry output in this transaction
-            // TODO: do we ever receive an entry that has been spend already?
-            //  yes, don't add in this situation! change this
-            //  how do we determine that it has been spent?
-            log.info("  lottery entry tx {} -> unspent", tx.getHashAsString());
-            addWalletTransaction(Pool.UNSPENT, tx);
+            if (tx.isEveryOwnedOutputSpent(this)) {
+                log.info("  lottery entry tx {} ->spent (by pending)", tx.getHashAsString());
+                addWalletTransaction(Pool.SPENT, tx);
+            } else {
+                log.info("  lottery entry tx {} ->unspent", tx.getHashAsString());
+                addWalletTransaction(Pool.UNSPENT, tx);
+            }
         } else if (hasOutputsToMe) {
             // Needs to go into either unspent or spent (if the outputs were already spent by a pending tx).
             if (tx.isEveryOwnedOutputSpent(this)) {
@@ -2176,8 +2178,14 @@ public class Wallet extends BaseTaggableObject
             log.info("  tx {} ->spent", tx.getHashAsString());
             addWalletTransaction(Pool.SPENT, tx);
         } else if (useLottery && tx.containsLotteryClaim()) {
-            //TODO: add this to correct pool, spent or unspent
-            log.info("  tx {} is a lottery claim", tx.getHashAsString());
+            // We have received a lottery entry output in this transaction
+            if (tx.isEveryOwnedOutputSpent(this)) {
+                log.info("  lottery claim tx {} ->spent (by pending)", tx.getHashAsString());
+                addWalletTransaction(Pool.SPENT, tx);
+            } else {
+                log.info("  lottery claim tx {} ->unspent", tx.getHashAsString());
+                addWalletTransaction(Pool.UNSPENT, tx);
+            }
         } else if (forceAddToPool) {
             // Was manually added to pending, so we should keep it to notify the user of confidence information
             log.info("  tx {} ->spent (manually added)", tx.getHashAsString());
@@ -2286,7 +2294,7 @@ public class Wallet extends BaseTaggableObject
         for (Transaction pendingTx : pending.values()) {
             for (TransactionInput input : pendingTx.getInputs()) {
                 TransactionInput.ConnectionResult result = input.connect(tx, TransactionInput.ConnectMode.ABORT_ON_CONFLICT);
-                if (fromChain) {
+                if (fromChain && !input.getScriptSig().isLotteryClaim()) {
                     // This TX is supposed to have just appeared on the best chain, so its outputs should not be marked
                     // as spent yet. If they are, it means something is happening out of order.
                     checkState(result != TransactionInput.ConnectionResult.ALREADY_SPENT);
@@ -2297,13 +2305,13 @@ public class Wallet extends BaseTaggableObject
                     // The unspents map might not have it if we never saw this tx until it was included in the chain
                     // and thus becomes spent the moment we become aware of it.
                     TransactionOutput out = input.getConnectedOutput();
-                    if (out.getScriptPubKey().isLotteryEntry() && fromChain) {
-                        myClaimables.remove(out);
-                        log.info("Removed from CLAIMABLES: {}", out);
-                    } else if (out.getScriptPubKey().isLotteryEntry()) {
+                    //if (out.getScriptPubKey().isLotteryEntry() && fromChain) {
+                    //    myClaimables.remove(out);
+                    //    log.info("Removed from CLAIMABLES: {}:{}", out.getParentTransactionHash(), out.getIndex());
+                    if (out.getScriptPubKey().isLotteryEntry()) {
                         // We have received a lottery claim not in a block, don't remove anything from claimables
                         //   as we may want to claim it too
-                        log.info("Transaction {} is a claim of {} output {} but is not in a block.", tx.getHashAsString(), out.getParentTransactionHash(), out.getIndex());
+                        log.info("Transaction {} is a claim of {} output {} but has not yet been seen in a block.", tx.getHashAsString(), out.getParentTransactionHash(), out.getIndex());
                     } else {
                         myUnspents.remove(out);
                         log.info("Removed from UNSPENTS: {}", out);
