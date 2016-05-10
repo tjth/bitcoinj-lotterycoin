@@ -120,6 +120,15 @@ public class WalletAppKit extends AbstractIdleService {
         this.peerAddresses = addresses;
         return this;
     }
+    
+    /** Will connect to lottery net. Cannot be called after startup. */
+    public WalletAppKit connectToLotteryNet(InetAddress addr) {
+        if (!useLottery) {
+            log.warn("Trying to connect to lottery net with useLottery = false. This could be bad...");
+        }
+        return setPeerNodes(new PeerAddress(params, addr, params.getPort()));
+    }
+
 
     /** Will only connect to localhost. Cannot be called after startup. */
     public WalletAppKit connectToLocalHost() {

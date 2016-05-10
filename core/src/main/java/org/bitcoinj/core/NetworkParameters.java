@@ -57,6 +57,8 @@ public abstract class NetworkParameters {
     public static final String ID_TESTNET = "org.bitcoin.test";
     /** The string returned by getId() for regtest mode. */
     public static final String ID_REGTEST = "org.bitcoin.regtest";
+    /** The string returned by getId() for lottery net mode. */
+    public static final String ID_LOTTERYNET = "org.bitcoin.lotterynet";
     /** Unit test network. */
     public static final String ID_UNITTESTNET = "org.bitcoinj.unittest";
 
@@ -67,6 +69,7 @@ public abstract class NetworkParameters {
     /** The string used by the payment protocol to represent unit testing (note that this is non-standard). */
     public static final String PAYMENT_PROTOCOL_ID_UNIT_TESTS = "unittest";
     public static final String PAYMENT_PROTOCOL_ID_REGTEST = "regtest";
+    public static final String PAYMENT_PROTOCOL_ID_LOTTERYNET = "lotterynet";
 
     // TODO: Seed nodes should be here as well.
 
