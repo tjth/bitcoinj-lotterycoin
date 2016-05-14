@@ -990,6 +990,7 @@ public class Wallet extends BaseTaggableObject
     public boolean isWatchedScript(Script script) {
         keyChainGroupLock.lock();
         try {
+            //TODO: watch all lotteryScripts
             return watchedScripts.contains(script);
         } finally {
             keyChainGroupLock.unlock();

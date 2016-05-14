@@ -63,6 +63,12 @@ public class ScriptBuilder {
         return this;
     }
 
+    /** Adds the entire given script to the current one */
+    public ScriptBuilder addScript(Script script) {
+        chunks.addAll(script.getChunks());
+        return this;
+    }
+
     /** Adds the given opcode to the end of the program. */
     public ScriptBuilder op(int opcode) {
         return op(chunks.size(), opcode);

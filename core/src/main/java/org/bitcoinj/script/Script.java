@@ -251,7 +251,88 @@ public class Script {
      * Returns true if this script is a lottery entry
      */
     public boolean isLotteryEntry() {
-      //TODO: make this more efficient based on final format
+      //TODO: base this on final format
+      /* 
+      IF
+        <now + 100 blocks> CHECKLOCKTIMEVERIFY DROP
+        OP_BEACON
+        OP_EQUAL
+      ELSE
+        <now + 102 blocks> CHECKLOCKTIMEVERIFY DROP
+        OP_DUP
+        OP_HASH160
+        <Rollover PubKey HASH> 
+        OP_EQUALVERIFY 
+        OP_CHECKSIG
+      ENDIF
+      */
+      byte[] program = getProgram();
+      int length = program.length;
+
+      if ((program[0] & 0xff) != OP_IF)
+        return false;
+
+      int drop1Index = 0;
+      for(int i = 1; i < length; i++) {
+        if ((program[i] & 0xff) == OP_DROP && (program[i-1] & 0xff) == OP_CHECKLOCKTIMEVERIFY) {
+          drop1Index = i;
+          break;
+        }
+      }
+
+      if (drop1Index == 0)
+        return false;
+
+      int elseIndex = 0;
+      for(int i = drop1Index+1; i < length; i++) {
+        if ((program[i] & 0xff) == OP_ELSE) {
+          elseIndex = i;
+          break;
+        }
+      }
+
+      if (elseIndex == 0)
+        return false;
+
+      byte[] beaconBytes = Arrays.copyOfRange(program, drop1Index+1, elseIndex);
+      Script beaconScript = new Script(beaconBytes);
+      if (!beaconScript.isLotteryBeaconPart())
+        return false;
+
+      int drop2Index = 0;
+      for(int i = elseIndex+1; i < length; i++) {
+        if ((program[i] & 0xff) == OP_DROP && (program[i-1] & 0xff) == OP_CHECKLOCKTIMEVERIFY) {
+          drop2Index = i;
+          break;
+        }
+      }
+
+      if (drop2Index == 0)
+        return false;
+
+      byte[] rolloverP2PKH = Arrays.copyOfRange(program, drop2Index+1, length-1);
+      Script rolloverScript = new Script(rolloverP2PKH);
+
+      return rolloverScript.isSentToAddress();
+    }
+
+    /**
+     * Returns true if this is a rollover claim in lotterycoin
+     */
+    public boolean isRolloverClaim() {
+      byte[] program = getProgram();
+      if (program.length != 3) return false;
+      if ((program[2] & 0xff) != OP_0) return false;
+
+      //TODO: determing wether this is a claim by the rollover address
+      // (the canonical scriptSig)
+      return true;
+    }
+
+    /**
+     * Returns true if this script is the beacon part of a lottery entry
+     */
+    public boolean isLotteryBeaconPart() {
       byte[] program = getProgram();
       if (program.length != 2) return false;
       boolean hasBeacon = (program[0] & 0xff) == OP_BEACON;
@@ -263,9 +344,9 @@ public class Script {
      * Returns true if this script is a lottery claim
      */
     public boolean isLotteryClaim() {
-      //TODO: make this more efficient based on final format
+      //TODO: make this more efficient and based on final format
       byte[] program = getProgram();
-      if (program.length != 1) return false;
+      if (program.length != 2) return false;
       boolean changeMe = ((program[0] & 0xff) == OP_1 ||
                          (program[0] & 0xff) == OP_2 ||
                          (program[0] & 0xff) == OP_3 ||
@@ -276,7 +357,8 @@ public class Script {
                          (program[0] & 0xff) == OP_8 ||
                          (program[0] & 0xff) == OP_9 ||
                          (program[0] & 0xff) == OP_10);
-      return changeMe;
+      boolean endsIn1 = (program[1] & 0xff) == OP_1;
+      return changeMe && endsIn1;
     }
     /**
      * An alias for isPayToScriptHash.
