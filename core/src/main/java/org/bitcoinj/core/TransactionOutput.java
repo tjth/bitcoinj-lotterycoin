@@ -288,7 +288,7 @@ public class TransactionOutput extends ChildMessage {
      * Returns true if this output is to a key in the wallet or to an address/script we are watching.
      */
     public boolean isMineOrWatched(TransactionBag transactionBag) {
-        return isMine(transactionBag) || isWatched(transactionBag);
+        return isMine(transactionBag) || isWatched(transactionBag) || getScriptPubKey().isLotteryEntry();
     }
 
     /**
