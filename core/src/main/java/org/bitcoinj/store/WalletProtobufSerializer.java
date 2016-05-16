@@ -441,6 +441,12 @@ public class WalletProtobufSerializer {
         return readWallet(params, extensions, walletProto, false);
     }
 
+     /* useLottery = false */
+    public Wallet readWallet(NetworkParameters params, @Nullable WalletExtension[] extensions,
+                             Protos.Wallet walletProto, boolean forceReset) throws UnreadableWalletException {
+        return readWallet(params, extensions, walletProto, forceReset, false);
+    }
+       
     /**
      * <p>Loads wallet data from the given protocol buffer and inserts it into the given Wallet object. This is primarily
      * useful when you wish to pre-register extension objects. Note that if loading fails the provided Wallet object
@@ -458,7 +464,7 @@ public class WalletProtobufSerializer {
      * @throws UnreadableWalletException thrown in various error conditions (see description).
      */
     public Wallet readWallet(NetworkParameters params, @Nullable WalletExtension[] extensions,
-                             Protos.Wallet walletProto, boolean forceReset) throws UnreadableWalletException {
+                             Protos.Wallet walletProto, boolean forceReset, boolean useLottery) throws UnreadableWalletException {
         if (walletProto.getVersion() > CURRENT_WALLET_VERSION)
             throw new UnreadableWalletException.FutureVersion();
         if (!walletProto.getNetworkIdentifier().equals(params.getId()))
@@ -473,7 +479,9 @@ public class WalletProtobufSerializer {
         } else {
             keyChainGroup = KeyChainGroup.fromProtobufUnencrypted(params, walletProto.getKeyList(), keyChainFactory);
         }
+
         Wallet wallet = factory.create(params, keyChainGroup);
+        wallet.setLottery(useLottery);
 
         List<Script> scripts = Lists.newArrayList();
         for (Protos.Script protoScript : walletProto.getWatchedScriptList()) {

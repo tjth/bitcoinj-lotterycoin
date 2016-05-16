@@ -415,7 +415,6 @@ public class WalletAppKit extends AbstractIdleService {
          
         FileInputStream walletStream = new FileInputStream(vWalletFile);
         try {
-          //TODO: change this bit so a Wallet with useLottery = true is created
             List<WalletExtension> extensions = provideWalletExtensions();
             WalletExtension[] extArray = extensions.toArray(new WalletExtension[extensions.size()]);
             Protos.Wallet proto = WalletProtobufSerializer.parseToProto(walletStream);
@@ -424,7 +423,7 @@ public class WalletAppKit extends AbstractIdleService {
                 serializer = new WalletProtobufSerializer(walletFactory);
             else
                 serializer = new WalletProtobufSerializer();
-            wallet = serializer.readWallet(params, extArray, proto);
+            wallet = serializer.readWallet(params, extArray, proto, useLottery);
             if (shouldReplayWallet)
                 wallet.reset();
         } finally {
