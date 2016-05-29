@@ -130,6 +130,9 @@ public class Wallet extends BaseTaggableObject
     // All the TransactionOutput objects that are lottery entries that we can spend
     protected final HashSet<TransactionOutput> myClaimables = Sets.newHashSet();
 
+    // In the claiming period, all entries for the new lottery should be stored in here
+    protected final HashSet<TransactinOutput> temporaryClaimbables = Sets.newHashSet();
+
     // Transactions that were dropped by the risk analysis system. These are not in any pools and not serialized
     // to disk. We have to keep them around because if we ignore a tx because we think it will never confirm, but
     // then it actually does confirm and does so within the same network session, remote peers will not resend us
@@ -218,6 +221,12 @@ public class Wallet extends BaseTaggableObject
 
     // If true, this wallet holds lottery transactions in the UTXO pool
     private boolean useLottery = false;
+    private boolean isLotteryClaimablePeriod = false;
+    private int previousLotteryStartBlock;
+    private int currentLotteryStartBlock;
+    private int final INITIAL_LOTTERY_START_BLOCK = 102;
+    private int final DEFAULT_LOTTERY_LENGTH = 100;
+    private int final DEFAULT_LOTTERY_CLAIMING_PERIOD = 2;
 
     /**
      * Creates a new, empty wallet with a randomly chosen seed and no transactions. Make sure to provide for sufficient
@@ -285,6 +294,7 @@ public class Wallet extends BaseTaggableObject
 
     public Wallet(Context context, KeyChainGroup keyChainGroup, boolean useLottery) {
         this.useLottery = useLottery;
+        this.currentLotteryStartBlock = INITIAL_LOTTERY_START_BLOCK;
         this.context = context;
         this.params = context.getParams();
         this.keyChainGroup = checkNotNull(keyChainGroup);
@@ -1901,11 +1911,11 @@ public class Wallet extends BaseTaggableObject
                     final TransactionInput spentBy = output.getSpentBy();
                     if (spentBy != null) {
                         if (useLottery && output.getScriptPubKey().isLotteryEntry()) {
-                            if (myClaimables.contains(output)) {
+                            if (correctClaimablesContains(output, false)) {
                                 log.info("    lottery entry already in claimables, not adding.");
                             } else {
                                 log.info("    adding transaction to claimable pool.");
-                                checkState(myClaimables.add(output));
+                                addToCorrectClaimables(output);
                             }
                         } else {
                             checkState(myUnspents.add(output));
@@ -2080,8 +2090,25 @@ public class Wallet extends BaseTaggableObject
         lock.lock();
         try {
             // Store the new block hash.
+            int height = block.getHeight();
             setLastBlockSeenHash(newBlockHash);
-            setLastBlockSeenHeight(block.getHeight());
+            setLastBlockSeenHeight(height);
+            if (height > currentLotteryStartBlock + DEFAULT_LOTTERY_LENGTH && useLottery) {
+              // the current lottery entry period is over
+              previousLotteryStartBlock = currentLotteryStartBlock;
+              currentLotteryStartBlock += DEFAULT_LOTTERY_LENGTH;
+              isClaimableLotteryPeriod = true;
+
+              if (height > previousLotteryStartBlock + DEFAULT_LOTTERY_LENGTH + DEFAULT_LOTTERY_CLAIM_PERIOD) {
+                // claim period for previous lottery is over, remove candidates
+                isClaimableLotteryPeriod = false;
+                myClaimables.clear();
+
+                // copy any candidates for next lottery into myClaimables
+                myClaimables.addAll(temporaryClaimables);
+                temporaryClaimables.clear();
+              }
+            }
             setLastBlockSeenTimeSecs(block.getHeader().getTimeSeconds());
             // Notify all the BUILDING transactions of the new block.
             // This is so that they can update their depth.
@@ -2246,10 +2273,10 @@ public class Wallet extends BaseTaggableObject
                     //     Now it's being confirmed of course, we cannot mark it as spent again.
                     // (2) A double spend from chain: this will be handled later by findDoubleSpendsAgainst()/killTxns().
                     //
-                    if (input.getScriptSig().isLotteryClaim() && myClaimables.contains(output)) {
+                    if (input.getScriptSig().isLotteryClaim() && correctClaimablesContains(output)) {
                         checkState(output.getScriptPubKey().isLotteryEntry());
                         log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
-                        checkState(myClaimables.remove(output));
+                        removeFromCorrectClaimables(output);
                     } 
                 } else {
                     // We saw two pending transactions that double spend each other. We don't know which will win.
@@ -2273,9 +2300,8 @@ public class Wallet extends BaseTaggableObject
                 // the pending pool unless the output has been put in a block.
                 if (input.getScriptSig().isLotteryClaim() && fromChain) {
                     checkState(output.getScriptPubKey().isLotteryEntry());
-                    checkState(myClaimables.contains(output));
                     log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
-                    checkState(myClaimables.remove(output));
+                    removeFromCorrectClaimables(output);
                 } else if (input.getScriptSig().isLotteryClaim()) {
                     // We have received a lottery claim not in a block, don't remove anything from claimables
                     //   as we may want to claim it too
@@ -2306,9 +2332,6 @@ public class Wallet extends BaseTaggableObject
                     // The unspents map might not have it if we never saw this tx until it was included in the chain
                     // and thus becomes spent the moment we become aware of it.
                     TransactionOutput out = input.getConnectedOutput();
-                    //if (out.getScriptPubKey().isLotteryEntry() && fromChain) {
-                    //    myClaimables.remove(out);
-                    //    log.info("Removed from CLAIMABLES: {}:{}", out.getParentTransactionHash(), out.getIndex());
                     if (out.getScriptPubKey().isLotteryEntry()) {
                         // We have received a lottery claim not in a block, don't remove anything from claimables
                         //   as we may want to claim it too
@@ -2902,7 +2925,7 @@ public class Wallet extends BaseTaggableObject
                 if (output.isMineOrWatched(this) && 
                     (output.isAvailableForSpending() || output.getScriptPubKey().isLotteryEntry()))
                     if (output.getScriptPubKey().isLotteryEntry() && useLottery) {
-                      myClaimables.add(output);
+                      addToCorrectClaimables(output);
                     } else {
                       myUnspents.add(output);
                     }
@@ -2911,6 +2934,27 @@ public class Wallet extends BaseTaggableObject
         // This is safe even if the listener has been added before, as TransactionConfidence ignores duplicate
         // registration requests. That makes the code in the wallet simpler.
         tx.getConfidence().addEventListener(Threading.SAME_THREAD, txConfidenceListener);
+    }
+
+    /**
+     * If we are in a claiming period, then add any new entries to the temporary hash set 
+     * to avoid mixing entries between lotteries.
+     */
+    public void addToCorrectClaimables(TransactionOutput output) {
+      if (isLotteryClaimablePeriod) {
+        temporaryClaimables.add(output);
+      } else {
+        myClaimables.add(ouput);
+      }
+    }
+
+    public boolean correctClaimablesContains(TransactionOutput output, boolean lastLottery) {
+      if (isLotteryClaimablePeriod) {
+        return temporary
+      } else {
+        myClaimables.add(ouput);
+      }
+
     }
 
     /**
