@@ -131,7 +131,7 @@ public class Wallet extends BaseTaggableObject
     protected final HashSet<TransactionOutput> myClaimables = Sets.newHashSet();
 
     // In the claiming period, all entries for the new lottery should be stored in here
-    protected final HashSet<TransactinOutput> temporaryClaimbables = Sets.newHashSet();
+    protected final HashSet<TransactionOutput> temporaryClaimables = Sets.newHashSet();
 
     // Transactions that were dropped by the risk analysis system. These are not in any pools and not serialized
     // to disk. We have to keep them around because if we ignore a tx because we think it will never confirm, but
@@ -221,12 +221,13 @@ public class Wallet extends BaseTaggableObject
 
     // If true, this wallet holds lottery transactions in the UTXO pool
     private boolean useLottery = false;
-    private boolean isLotteryClaimablePeriod = false;
+    private boolean isLotteryClaimPeriod = false;
     private int previousLotteryStartBlock;
     private int currentLotteryStartBlock;
-    private int final INITIAL_LOTTERY_START_BLOCK = 102;
-    private int final DEFAULT_LOTTERY_LENGTH = 100;
-    private int final DEFAULT_LOTTERY_CLAIMING_PERIOD = 2;
+    private boolean startBlockUpdated = false;
+    private final int INITIAL_LOTTERY_START_BLOCK = 102;
+    private final int DEFAULT_LOTTERY_LENGTH = 100;
+    private final int DEFAULT_LOTTERY_CLAIMING_PERIOD = 2;
 
     /**
      * Creates a new, empty wallet with a randomly chosen seed and no transactions. Make sure to provide for sufficient
@@ -1865,6 +1866,7 @@ public class Wallet extends BaseTaggableObject
                          int relativityOffset) throws VerificationException {
         // Runs in a peer thread.
         checkState(lock.isHeldByCurrentThread());
+        possiblyUpdateLotteryState(block.getHeight());
 
         Coin prevBalance = getBalance();
         Sha256Hash txHash = tx.getHash();
@@ -2072,6 +2074,40 @@ public class Wallet extends BaseTaggableObject
         confidenceChanged.clear();
     }
 
+    public void possiblyUpdateLotteryState(int newHeight) {
+      if (!useLottery) return;
+
+      if (newHeight > currentLotteryStartBlock + DEFAULT_LOTTERY_LENGTH) {
+          // the current lottery entry period is over
+          if (!startBlockUpdated) {
+            previousLotteryStartBlock = currentLotteryStartBlock;
+            currentLotteryStartBlock += DEFAULT_LOTTERY_LENGTH;
+            startBlockUpdated = true;
+            isLotteryClaimPeriod = true;
+            log.info("New lottery period: previous start={}, current start={}", previousLotteryStartBlock, currentLotteryStartBlock);
+          }
+      }
+
+      if (newHeight > previousLotteryStartBlock + DEFAULT_LOTTERY_LENGTH + DEFAULT_LOTTERY_CLAIMING_PERIOD && 
+          previousLotteryStartBlock != 0) {
+        if (startBlockUpdated) {// claim period for previous lottery is over, remove candidates
+          myClaimables.clear();
+
+          // copy any candidates for next lottery into myClaimables
+          myClaimables.addAll(temporaryClaimables);
+          temporaryClaimables.clear();
+          log.info("Claiming period over for lottery starting at block " + previousLotteryStartBlock + ".");
+          isLotteryClaimPeriod = false;
+          startBlockUpdated = false;
+          return;
+        }
+      }
+    }
+
+    public int getCurrentLotteryStartBlock() {
+      return currentLotteryStartBlock;
+    }
+
     /**
      * <p>Called by the {@link BlockChain} when a new block on the best chain is seen, AFTER relevant wallet
      * transactions are extracted and sent to us UNLESS the new block caused a re-org, in which case this will
@@ -2085,30 +2121,15 @@ public class Wallet extends BaseTaggableObject
     public void notifyNewBestBlock(StoredBlock block) throws VerificationException {
         // Check to see if this block has been seen before.
         Sha256Hash newBlockHash = block.getHeader().getHash();
+        int height = block.getHeight();
         if (newBlockHash.equals(getLastBlockSeenHash()))
             return;
         lock.lock();
         try {
             // Store the new block hash.
-            int height = block.getHeight();
-            setLastBlockSeenHash(newBlockHash);
+            possiblyUpdateLotteryState(height);
             setLastBlockSeenHeight(height);
-            if (height > currentLotteryStartBlock + DEFAULT_LOTTERY_LENGTH && useLottery) {
-              // the current lottery entry period is over
-              previousLotteryStartBlock = currentLotteryStartBlock;
-              currentLotteryStartBlock += DEFAULT_LOTTERY_LENGTH;
-              isClaimableLotteryPeriod = true;
-
-              if (height > previousLotteryStartBlock + DEFAULT_LOTTERY_LENGTH + DEFAULT_LOTTERY_CLAIM_PERIOD) {
-                // claim period for previous lottery is over, remove candidates
-                isClaimableLotteryPeriod = false;
-                myClaimables.clear();
-
-                // copy any candidates for next lottery into myClaimables
-                myClaimables.addAll(temporaryClaimables);
-                temporaryClaimables.clear();
-              }
-            }
+            setLastBlockSeenHash(newBlockHash);
             setLastBlockSeenTimeSecs(block.getHeader().getTimeSeconds());
             // Notify all the BUILDING transactions of the new block.
             // This is so that they can update their depth.
@@ -2273,10 +2294,10 @@ public class Wallet extends BaseTaggableObject
                     //     Now it's being confirmed of course, we cannot mark it as spent again.
                     // (2) A double spend from chain: this will be handled later by findDoubleSpendsAgainst()/killTxns().
                     //
-                    if (input.getScriptSig().isLotteryClaim() && correctClaimablesContains(output)) {
+                    if (input.getScriptSig().isLotteryClaim() && myClaimables.contains(output)) {
                         checkState(output.getScriptPubKey().isLotteryEntry());
                         log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
-                        removeFromCorrectClaimables(output);
+                        myClaimables.remove(output);
                     } 
                 } else {
                     // We saw two pending transactions that double spend each other. We don't know which will win.
@@ -2300,8 +2321,9 @@ public class Wallet extends BaseTaggableObject
                 // the pending pool unless the output has been put in a block.
                 if (input.getScriptSig().isLotteryClaim() && fromChain) {
                     checkState(output.getScriptPubKey().isLotteryEntry());
+                    checkState(myClaimables.contains(output));
                     log.info("Transaction {} spends lottery entry (txout) {} in a block, entry will be removed from myClaimables");
-                    removeFromCorrectClaimables(output);
+                    myClaimables.remove(output);
                 } else if (input.getScriptSig().isLotteryClaim()) {
                     // We have received a lottery claim not in a block, don't remove anything from claimables
                     //   as we may want to claim it too
@@ -2941,20 +2963,27 @@ public class Wallet extends BaseTaggableObject
      * to avoid mixing entries between lotteries.
      */
     public void addToCorrectClaimables(TransactionOutput output) {
-      if (isLotteryClaimablePeriod) {
+      if (isLotteryClaimPeriod) {
         temporaryClaimables.add(output);
       } else {
-        myClaimables.add(ouput);
+        myClaimables.add(output);
       }
     }
 
     public boolean correctClaimablesContains(TransactionOutput output, boolean lastLottery) {
-      if (isLotteryClaimablePeriod) {
-        return temporary
-      } else {
-        myClaimables.add(ouput);
-      }
+        if(lastLottery) {
+          if (isLotteryClaimPeriod) {
+            return myClaimables.contains(output);
+          } 
+          log.warn("Not in lottery claim period so cannot call contains on previous lottery.");
+          return false;
+        } else {
+          if (isLotteryClaimPeriod) {
+            return temporaryClaimables.contains(output);
+          }
 
+          return myClaimables.contains(output);
+        }
     }
 
     /**
@@ -3604,13 +3633,18 @@ public class Wallet extends BaseTaggableObject
     /**
      * Returns the balance that is claimable via lottery entries we have seen
      */
-    public Coin getClaimableBalance() {
+    public Coin getClaimableBalance(boolean prevLottery) {
         if (!useLottery) {
             log.info("Called getClaimableBalance() but not using lottery wallet!");
             return Coin.ZERO;
         }
 
-        List<TransactionOutput> candidates = calculateAllClaimCandidates();
+        if (prevLottery && !isLotteryClaimPeriod) {
+            log.warn("Not in a claim period so cannot get claim balance for previous lottery.");
+            return Coin.ZERO;
+        }
+
+        List<TransactionOutput> candidates = calculateAllClaimCandidates(prevLottery);
 
         Coin value = Coin.ZERO;
         for(TransactionOutput out : candidates) {
@@ -4476,18 +4510,32 @@ public class Wallet extends BaseTaggableObject
      * Returns a list of all claimable lottery entries that we have seen 
      *
      */
-    public List<TransactionOutput> calculateAllClaimCandidates() {
+    public List<TransactionOutput> calculateAllClaimCandidates(boolean prevLottery) {
         if (!useLottery) {
             log.info("Tried to get claim candidates in a non-lottery wallet.");
             return null;
         }
-        
+
+        if (prevLottery && !isLotteryClaimPeriod) {
+            log.warn("Not in a claim period so cannot get claim candidates for previous lottery.");
+            return null;
+        }
+
         lock.lock();
         try {
             List<TransactionOutput> candidates;
-            candidates = new ArrayList<TransactionOutput>(myClaimables.size());
-            for (TransactionOutput output : myClaimables) {
-                    candidates.add(output);
+
+            if (prevLottery || !isLotteryClaimPeriod) {
+              candidates = new ArrayList<TransactionOutput>(myClaimables.size());
+              for (TransactionOutput output : myClaimables) {
+                      candidates.add(output);
+              }
+
+            } else {
+              candidates = new ArrayList<TransactionOutput>(temporaryClaimables.size());
+              for (TransactionOutput output : temporaryClaimables) {
+                      candidates.add(output);
+              }
             }
             return candidates;
         } finally {
