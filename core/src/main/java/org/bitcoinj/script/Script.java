@@ -251,7 +251,6 @@ public class Script {
      * Returns true if this script is a lottery entry
      */
     public boolean isLotteryEntry() {
-      //TODO: base this on final format
       /* 
       IF
         <now + 100 blocks> CHECKLOCKTIMEVERIFY DROP
@@ -344,21 +343,12 @@ public class Script {
      * Returns true if this script is a lottery claim
      */
     public boolean isLotteryClaim() {
-      //TODO: make this more efficient and based on final format
-      byte[] program = getProgram();
-      if (program.length != 2) return false;
-      boolean changeMe = ((program[0] & 0xff) == OP_1 ||
-                         (program[0] & 0xff) == OP_2 ||
-                         (program[0] & 0xff) == OP_3 ||
-                         (program[0] & 0xff) == OP_4 ||
-                         (program[0] & 0xff) == OP_5 ||
-                         (program[0] & 0xff) == OP_6 ||
-                         (program[0] & 0xff) == OP_7 ||
-                         (program[0] & 0xff) == OP_8 ||
-                         (program[0] & 0xff) == OP_9 ||
-                         (program[0] & 0xff) == OP_10);
-      boolean endsIn1 = (program[1] & 0xff) == OP_1;
-      return changeMe && endsIn1;
+      // <claim> <bitsOfRandomness> FLEXIHASH <bitsOfRandomness>
+      // <endBlock> <startBlock> OP_1
+      //TODO: validation on the data
+      if (chunks.size() != 7) return false;
+      if (!chunks.get(2).equalsOpCode(OP_FLEXIHASH)) return false;
+      return (chunks.get(6).equalsOpCode(OP_1));
     }
     /**
      * An alias for isPayToScriptHash.

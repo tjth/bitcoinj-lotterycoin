@@ -149,7 +149,7 @@ public class ScriptOpCodes {
     // lotterycoin additions
     /** BEACON: random hash based on previous blocks, replacing OP_NOP3 */
     public static final int OP_BEACON = 0xb2;
-    /** FLEXIHASH: hash lottery guess */
+    /** FLEXIHASH: hash lottery guess to given amount of bits, replacing OP_NOP4 */
     public static final int OP_FLEXIHASH = 0xb3;
 
     // expansion

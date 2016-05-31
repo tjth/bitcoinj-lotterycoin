@@ -1866,7 +1866,11 @@ public class Wallet extends BaseTaggableObject
                          int relativityOffset) throws VerificationException {
         // Runs in a peer thread.
         checkState(lock.isHeldByCurrentThread());
-        possiblyUpdateLotteryState(block.getHeight());
+
+        if (useLottery && block == null)
+          log.warn("Null block in lottery wallet");
+        if (useLottery && block != null)
+          possiblyUpdateLotteryState(block.getHeight());
 
         Coin prevBalance = getBalance();
         Sha256Hash txHash = tx.getHash();
