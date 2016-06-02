@@ -221,13 +221,26 @@ public class Wallet extends BaseTaggableObject
 
     // If true, this wallet holds lottery transactions in the UTXO pool
     private boolean useLottery = false;
-    private boolean isLotteryClaimPeriod = false;
     private int previousLotteryStartBlock;
     private int currentLotteryStartBlock;
     private boolean startBlockUpdated = false;
-    private final int INITIAL_LOTTERY_START_BLOCK = 102;
-    private final int DEFAULT_LOTTERY_LENGTH = 100;
+    private final int INITIAL_LOTTERY_START_BLOCK = 1;
+    private final int DEFAULT_LOTTERY_PERIOD = 100;
     private final int DEFAULT_LOTTERY_CLAIMING_PERIOD = 2;
+    private final int DEFAULT_LOTTERY_DELAY_PERIOD = 4;
+
+    public enum LotteryState {
+        /* normal lottery state where people can enter but not claim */
+        NORMAL,
+
+        /* delay period for previous lottery, can still enter current one */
+        DELAY,
+
+        /* claim period for previous lottery, can still enter current one */
+        CLAIM
+    }
+
+    private LotteryState lotteryState = LotteryState.NORMAL;
 
     /**
      * Creates a new, empty wallet with a randomly chosen seed and no transactions. Make sure to provide for sufficient
@@ -2081,18 +2094,28 @@ public class Wallet extends BaseTaggableObject
     public void possiblyUpdateLotteryState(int newHeight) {
       if (!useLottery) return;
 
-      if (newHeight > currentLotteryStartBlock + DEFAULT_LOTTERY_LENGTH) {
+      if (newHeight > currentLotteryStartBlock + DEFAULT_LOTTERY_PERIOD) {
           // the current lottery entry period is over
           if (!startBlockUpdated) {
             previousLotteryStartBlock = currentLotteryStartBlock;
-            currentLotteryStartBlock += DEFAULT_LOTTERY_LENGTH;
+            currentLotteryStartBlock += DEFAULT_LOTTERY_PERIOD;
+            lotteryState = LotteryState.DELAY;
             startBlockUpdated = true;
-            isLotteryClaimPeriod = true;
             log.info("New lottery period: previous start={}, current start={}", previousLotteryStartBlock, currentLotteryStartBlock);
+            log.info("Now in delay period for lottery starting at {}", previousLotteryStartBlock);
           }
       }
 
-      if (newHeight > previousLotteryStartBlock + DEFAULT_LOTTERY_LENGTH + DEFAULT_LOTTERY_CLAIMING_PERIOD && 
+      if (newHeight > previousLotteryStartBlock + DEFAULT_LOTTERY_PERIOD + DEFAULT_LOTTERY_DELAY_PERIOD && 
+          previousLotteryStartBlock != 0) {
+        if (lotteryState != LotteryState.CLAIM && startBlockUpdated) {
+          lotteryState = LotteryState.CLAIM;
+          log.info("Delay period for lottery starting at {} now over, claiming period open", previousLotteryStartBlock);
+       
+        }
+      }
+
+      if (newHeight > previousLotteryStartBlock + DEFAULT_LOTTERY_PERIOD + DEFAULT_LOTTERY_DELAY_PERIOD + DEFAULT_LOTTERY_CLAIMING_PERIOD && 
           previousLotteryStartBlock != 0) {
         if (startBlockUpdated) {// claim period for previous lottery is over, remove candidates
           myClaimables.clear();
@@ -2101,7 +2124,7 @@ public class Wallet extends BaseTaggableObject
           myClaimables.addAll(temporaryClaimables);
           temporaryClaimables.clear();
           log.info("Claiming period over for lottery starting at block " + previousLotteryStartBlock + ".");
-          isLotteryClaimPeriod = false;
+          lotteryState = LotteryState.NORMAL;
           startBlockUpdated = false;
           return;
         }
@@ -2110,6 +2133,18 @@ public class Wallet extends BaseTaggableObject
 
     public int getCurrentLotteryStartBlock() {
       return currentLotteryStartBlock;
+    }
+
+    public int getLotteryPeriod() {
+      return DEFAULT_LOTTERY_PERIOD;
+    }
+
+    public int getLotteryDelayPeriod() {
+      return DEFAULT_LOTTERY_DELAY_PERIOD;
+    }
+
+    public int getLotteryClaimingPeriod() {
+      return DEFAULT_LOTTERY_CLAIMING_PERIOD;
     }
 
     /**
@@ -2967,7 +3002,7 @@ public class Wallet extends BaseTaggableObject
      * to avoid mixing entries between lotteries.
      */
     public void addToCorrectClaimables(TransactionOutput output) {
-      if (isLotteryClaimPeriod) {
+      if (lotteryState == LotteryState.CLAIM || lotteryState == LotteryState.DELAY) {
         temporaryClaimables.add(output);
       } else {
         myClaimables.add(output);
@@ -2976,13 +3011,13 @@ public class Wallet extends BaseTaggableObject
 
     public boolean correctClaimablesContains(TransactionOutput output, boolean lastLottery) {
         if(lastLottery) {
-          if (isLotteryClaimPeriod) {
+          if (lotteryState == LotteryState.CLAIM || lotteryState == LotteryState.DELAY) {
             return myClaimables.contains(output);
           } 
           log.warn("Not in lottery claim period so cannot call contains on previous lottery.");
           return false;
         } else {
-          if (isLotteryClaimPeriod) {
+          if (lotteryState == LotteryState.CLAIM || lotteryState == LotteryState.DELAY) {
             return temporaryClaimables.contains(output);
           }
 
@@ -3643,7 +3678,7 @@ public class Wallet extends BaseTaggableObject
             return Coin.ZERO;
         }
 
-        if (prevLottery && !isLotteryClaimPeriod) {
+        if (prevLottery && !(lotteryState == LotteryState.CLAIM || lotteryState == LotteryState.DELAY)) {
             log.warn("Not in a claim period so cannot get claim balance for previous lottery.");
             return Coin.ZERO;
         }
@@ -4520,7 +4555,7 @@ public class Wallet extends BaseTaggableObject
             return null;
         }
 
-        if (prevLottery && !isLotteryClaimPeriod) {
+        if (prevLottery && lotteryState != LotteryState.CLAIM) {
             log.warn("Not in a claim period so cannot get claim candidates for previous lottery.");
             return null;
         }
@@ -4529,7 +4564,7 @@ public class Wallet extends BaseTaggableObject
         try {
             List<TransactionOutput> candidates;
 
-            if (prevLottery || !isLotteryClaimPeriod) {
+            if (prevLottery || !(lotteryState == LotteryState.CLAIM || lotteryState == LotteryState.DELAY)) {
               candidates = new ArrayList<TransactionOutput>(myClaimables.size());
               for (TransactionOutput output : myClaimables) {
                       candidates.add(output);
