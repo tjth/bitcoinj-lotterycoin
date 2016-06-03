@@ -348,9 +348,9 @@ public class Script {
       // <entry tx hash> <claim> <bitsOfRandomness> 
       // FLEXIHASH <bitsOfRandomness>  OP_1
       //TODO: validation on the data
-      if (chunks.size() != 6) return false;
-      if (!chunks.get(3).equalsOpCode(OP_FLEXIHASH)) return false;
-      return (chunks.get(5).equalsOpCode(OP_1));
+      if (chunks.size() != 7) return false;
+      if (!chunks.get(4).equalsOpCode(OP_FLEXIHASH)) return false;
+      return (chunks.get(6).equalsOpCode(OP_1));
     }
     /**
      * An alias for isPayToScriptHash.
