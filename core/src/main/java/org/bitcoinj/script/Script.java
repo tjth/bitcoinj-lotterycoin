@@ -253,7 +253,9 @@ public class Script {
     public boolean isLotteryEntry() {
       /* 
       IF
-        <now + 100 blocks> CHECKLOCKTIMEVERIFY DROP
+        <now + 104 blocks> CHECKLOCKTIMEVERIFY DROP
+        <beacon start>
+        <beacon end>
         OP_BEACON
         OP_EQUAL
       ELSE
@@ -332,11 +334,10 @@ public class Script {
      * Returns true if this script is the beacon part of a lottery entry
      */
     public boolean isLotteryBeaconPart() {
-      byte[] program = getProgram();
-      if (program.length != 2) return false;
-      boolean hasBeacon = (program[0] & 0xff) == OP_BEACON;
-      boolean hasEqual = (program[1] & 0xff) == OP_EQUAL;
-      return hasEqual && hasBeacon;
+      if (chunks.size() != 4) return false;
+      boolean hasBeacon = chunks.get(2).equalsOpCode(OP_BEACON);
+      boolean hasEqual = chunks.get(3).equalsOpCode(OP_EQUAL);
+      return hasBeacon && hasEqual;
     }
 
     /**
@@ -346,9 +347,9 @@ public class Script {
       // <claim> <bitsOfRandomness> FLEXIHASH <bitsOfRandomness>
       // <endBlock> <startBlock> OP_1
       //TODO: validation on the data
-      if (chunks.size() != 7) return false;
+      if (chunks.size() != 5) return false;
       if (!chunks.get(2).equalsOpCode(OP_FLEXIHASH)) return false;
-      return (chunks.get(6).equalsOpCode(OP_1));
+      return (chunks.get(4).equalsOpCode(OP_1));
     }
     /**
      * An alias for isPayToScriptHash.
