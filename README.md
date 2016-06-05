@@ -2,6 +2,14 @@
 
 [![Visit our IRC channel](https://kiwiirc.com/buttons/irc.freenode.net/bitcoinj.png)](https://kiwiirc.com/client/irc.freenode.net/bitcoinj)
 
+### BitcoinJ for LotteryCoin
+
+This is my forked implementation of BitcoinJ for SPV wallets on the LotteryCoin network. It includes new opcodes and new wallet functionality in regards to entering the lottery and claiming winnings. 
+
+See below for BitcoinJ's README.
+
+---------------------
+
 ### Welcome to bitcoinj
 
 The bitcoinj library is a Java implementation of the Bitcoin protocol, which allows it to maintain a wallet and send/receive transactions without needing a local copy of Bitcoin Core. It comes with full documentation and some example apps showing how to use it.
