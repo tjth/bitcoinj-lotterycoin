@@ -131,6 +131,7 @@ public class Wallet extends BaseTaggableObject
     protected final HashSet<TransactionOutput> myClaimables = Sets.newHashSet();
 
     // In the claiming period, all entries for the new lottery should be stored in here
+    //  to separate the two lotteries
     protected final HashSet<TransactionOutput> temporaryClaimables = Sets.newHashSet();
 
     // Transactions that were dropped by the risk analysis system. These are not in any pools and not serialized
@@ -219,7 +220,7 @@ public class Wallet extends BaseTaggableObject
     // If this is set then the wallet selects spendable candidate outputs from a UTXO provider.
     @Nullable private volatile UTXOProvider vUTXOProvider;
 
-    // If true, this wallet holds lottery transactions in the UTXO pool
+    // lottery specific values
     private boolean useLottery = false;
     private int previousLotteryStartBlock;
     private int currentLotteryStartBlock;
